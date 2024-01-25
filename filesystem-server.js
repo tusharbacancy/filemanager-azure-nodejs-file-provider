@@ -92,7 +92,7 @@ async function deleteFoldersAndFiles(req, res) {
     for (let i = 0; i < req.body.data.length; i++) {
       if (req.body.data[i].isFile) {
         const blobClient = containerClient.getBlobClient(
-          directoryName + req.body.path + req.body.names[i]
+          req.params.projectId + req.body.path + req.body.names[i]
         );
         const properties = await blobClient.getProperties();
         const fileData = {
@@ -109,7 +109,8 @@ async function deleteFoldersAndFiles(req, res) {
         await blobClient.delete();
       } else {
         for await (const blob of containerClient.listBlobsFlat({
-          prefix: directoryName + req.body.path + req.body.names[i] + endSlash,
+          prefix:
+            req.params.projectId + req.body.path + req.body.names[i] + endSlash,
         })) {
           const fileData = {
             dateCreated: blob.properties.createdOn,
@@ -408,7 +409,8 @@ async function copyAndMoveFiles(req, res) {
         // Here the prefix is "Files/Document/". that end '/' added for get the exact directory.
         // For example If this '/' is not added it wil take the "Files/Document" and "Files/Documents".
         for await (const {} of containerClient.listBlobsFlat({
-          prefix: directoryName + req.body.targetPath + item.name + endSlash,
+          prefix:
+            req.params.projectId + req.body.targetPath + item.name + endSlash,
         })) {
           isExist = true;
           break;
@@ -425,7 +427,7 @@ async function copyAndMoveFiles(req, res) {
       if (!isExist) {
         var newDirectoryName = item.name;
         for await (const blob of containerClient.listBlobsFlat({
-          prefix: directoryName + req.body.path + item.name + endSlash,
+          prefix: req.params.projectId + req.body.path + item.name + endSlash,
         })) {
           // Here replace the source path with empty string. if source path is "Files/Pictures/tom.png" the targetPath is "tom.png".
           // Here "directoryName = Files" and "req.body.path = /Pictures/".
@@ -484,10 +486,10 @@ async function copyAndMoveFiles(req, res) {
     } else {
       var isExist = false;
       const sourceBlobClient = containerClient.getBlockBlobClient(
-        directoryName + req.body.path + item.name
+        req.params.projectId + req.body.path + item.name
       );
       var destinationBlobClient = containerClient.getBlockBlobClient(
-        directoryName + req.body.targetPath + item.name
+        req.params.projectId + req.body.targetPath + item.name
       );
       if (!isRename) {
         if (await destinationBlobClient.exists()) {
@@ -513,7 +515,7 @@ async function copyAndMoveFiles(req, res) {
             newFileName =
               fileNameWithoutExtension + "(" + counter + ")" + fileExtension;
             destinationBlobClient = containerClient.getBlockBlobClient(
-              directoryName + req.body.targetPath + newFileName
+              req.params.projectId + req.body.targetPath + newFileName
             );
             if (!(await destinationBlobClient.exists())) {
               await destinationBlobClient.beginCopyFromURL(
@@ -558,9 +560,10 @@ async function searchFiles(req, res) {
 
   const directories = [];
 
-  await searchInFolder(directoryName + currentPath, directories);
+  await searchInFolder(req.params.projectId + currentPath, directories);
   // Helper function to search in folders
   async function searchInFolder(prefix, directory) {
+    let entry;
     for await (const item of containerClient.listBlobsByHierarchy("/", {
       prefix,
     })) {
@@ -624,6 +627,27 @@ async function byteConversion(fileSize) {
 }
 
 app.post("/:projectId", async function (req, res) {
+  if (typeof req.body !== "undefined" && req.body.action === "delete") {
+    await deleteFoldersAndFiles(req, res);
+  }
+  if (typeof req.body !== "undefined" && req.body.action === "details") {
+    await getDetails(req, res);
+  }
+  if (typeof req.body !== "undefined" && req.body.action === "create") {
+    await createFolder(req, res);
+  }
+  if (typeof req.body !== "undefined" && req.body.action === "rename") {
+    await rename(req, res);
+  }
+  if (
+    typeof req.body !== "undefined" &&
+    (req.body.action === "copy" || req.body.action === "move")
+  ) {
+    await copyAndMoveFiles(req, res);
+  }
+  if (typeof req.body !== "undefined" && req.body.action === "search") {
+    await searchFiles(req, res);
+  }
   if (typeof req.body !== "undefined" && req.body.action === "read") {
     let totalFiles = await getFiles(req);
     let cwdFiles = {};
@@ -647,10 +671,10 @@ app.post("/:projectId", async function (req, res) {
   }
 });
 
-app.get("/GetImage", async function (req, res) {
+app.get(`/image/GetImage/:projectId`, async function (req, res) {
   try {
     const blobClient = containerClient.getBlobClient(
-      directoryName + req.query.path
+      req.params.projectId + req.query.path
     );
     // Download the image as a readable stream
     const downloadResponse = await blobClient.download();
@@ -667,9 +691,7 @@ app.post("/file/Download/:projectId", async function (req, res) {
     if (downloadObj.names.length === 1 && downloadObj.data[0].isFile) {
       // Get a reference to the file blob
       const blockBlobClient = containerClient.getBlockBlobClient(
-          req.params.projectId +
-          downloadObj.path +
-          downloadObj.names[0]
+        req.params.projectId + downloadObj.path + downloadObj.names[0]
       );
       // Download the file to a local destination
       const downloadResponse = await blockBlobClient.download(0);
@@ -745,13 +767,13 @@ app.post("/file/Download/:projectId", async function (req, res) {
 });
 
 app.post(
-  "/Upload",
+  "/file/Upload/:projectId",
   multer(multerConfig).any("uploadFiles"),
   async function (req, res) {
     if (req.body != null && req.body.path != null) {
       if (req.body.action === "save") {
         const blobClient = containerClient.getBlockBlobClient(
-          directoryName + req.body.path + req.body.filename
+          req.params.projectId + req.body.path + req.body.filename
         );
         if (!(await blobClient.exists())) {
           await blobClient.uploadData(req.files[0].buffer);
