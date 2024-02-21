@@ -72,6 +72,9 @@ async function getFiles(req) {
       entry.dateModified = await getDateModified(item.name);
       directoriesAndFiles.push(entry);
     } else {
+      const blobClient = containerClient.getBlobClient(item.name);
+      const properties = await blobClient.getProperties();
+
       entry = {};
       entry.name = basename(item.name);
       entry.type = extname(item.name);
@@ -80,6 +83,8 @@ async function getFiles(req) {
       entry.dateModified = item.properties.lastModified;
       entry.hasChild = false;
       entry.filterPath = req.body.path;
+      entry.embeddings_added = properties?.metadata?.embeddings_added || 'N/A';
+      entry.docStatus = properties?.metadata?.docstatus;
       directoriesAndFiles.push(entry);
     }
   }
@@ -258,7 +263,7 @@ async function getDetails(req, res) {
   }
 }
 
-const modifyBodyForCreateFolder=(req,res)=>{
+const modifyBodyForCreateFolder = (req, res) => {
   const projectId = req.params.projectId;
   const email = req.query?.username;
   const searchString = `/${projectId}/${email}`;
@@ -267,19 +272,13 @@ const modifyBodyForCreateFolder=(req,res)=>{
     req.body.path = req.body.path.replace(searchString, "");
   } else if (req.body.path.includes(`/${projectId}`)) {
     req.body.path = req.body.path.replace(`/${projectId}`, "");
-  }
-  else if (req.body.path.includes(`/${email}`)) {
+  } else if (req.body.path.includes(`/${email}`)) {
     req.body.path = req.body.path.replace(`/${email}`, "");
   }
-  
+
   const checkPath = `${req.params.projectId}/${req.query.username}`;
   req.body.path = checkPath + req.body.path;
-
-
-  console.log(req.body.path);
-
-
-}
+};
 
 async function createFolder(req, res) {
   var response;
@@ -300,8 +299,8 @@ async function createFolder(req, res) {
     response = { cwd: null, files: null, details: null, error: errorMsg };
   } else {
     // Create a new folder with about.txt file
-    modifyBodyForCreateFolder(req,res)
-    const fileName = req.body.path  + req.body.name + "/about.txt";
+    modifyBodyForCreateFolder(req, res);
+    const fileName = req.body.path + req.body.name + "/about.txt";
     const blockBlobClient = containerClient.getBlockBlobClient(fileName);
     const fileContent = `This folder was created by user: ${req.query?.username}`;
     // Upload the about.txt to new folder.
@@ -806,16 +805,13 @@ const modifyBody = (req, res) => {
     req.body.path = req.body.path.replace(searchString, "");
   } else if (req.body.path.includes(`/${projectId}`)) {
     req.body.path = req.body.path.replace(`/${projectId}`, "");
-  }
-  else if (req.body.path.includes(`/${email}`)) {
+  } else if (req.body.path.includes(`/${email}`)) {
     req.body.path = req.body.path.replace(`/${email}`, "");
   }
-  
+
   const checkPath = `${req.params.projectId}/${req.params.email}`;
   req.body.path = checkPath + req.body.path + req.body.filename;
 
-
-  console.log(req.body.path);
 
   // Proceed with further logic or send response
 };
@@ -824,7 +820,7 @@ app.post(
   "/file/Upload/:projectId/:email",
   multer(multerConfig).any("uploadFiles"),
   async function (req, res) {
-    modifyBody(req,res);
+    modifyBody(req, res);
     if (req.body != null && req.body.path != null) {
       if (req.body.action === "save") {
         const blobClient = containerClient.getBlockBlobClient(req.body.path);
